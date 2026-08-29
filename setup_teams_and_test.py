@@ -24,8 +24,17 @@ Prerequisites:
 """
 
 import asyncio
+import sys
 import time
 from collections import Counter
+
+# Fix Windows console UTF-8 encoding for Rich emojis and symbols
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except AttributeError:
+        pass
 
 import httpx
 from rich.console import Console

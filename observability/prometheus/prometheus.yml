@@ -3,13 +3,14 @@ global:
   evaluation_interval: 10s
 
 scrape_configs:
-  # LiteLLM exposes Prometheus metrics at /metrics
+  # LiteLLM exposes Prometheus metrics at /metrics (protected by master key)
   - job_name: litellm
     static_configs:
       - targets: ["litellm:4000"]
     metrics_path: /metrics
+    bearer_token: sk-master-key-1234
 
-  # Mock providers — custom metrics from FastAPI (if added later)
+  # Mock providers — custom metrics from FastAPI
   - job_name: mock-primary
     static_configs:
       - targets: ["mock-api-primary:8000"]

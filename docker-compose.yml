@@ -5,9 +5,10 @@
 #   1. mock-api-primary   – FastAPI fake LLM (port 9000)
 #   2. mock-api-fallback  – FastAPI fake LLM (port 9001, independent state)
 #   3. redis              – Shared state for rate limiting and health caching
-#   4. litellm            – LiteLLM proxy gateway (port 4000)
-#   5. prometheus         – Metrics scraper (port 9090)
-#   6. grafana            – Dashboard UI (port 3000)
+#   4. db                 – PostgreSQL for LiteLLM teams, keys, and budgets (port 5432)
+#   5. litellm            – LiteLLM proxy gateway (port 4000)
+#   6. prometheus         – Metrics scraper (port 9090)
+#   7. grafana            – Dashboard UI (port 3000)
 #
 # Usage:
 #   cp .env.example .env        # configure your environment
@@ -64,6 +65,25 @@ services:
     volumes:
       - redis-data:/data
 
+  # ── PostgreSQL (LiteLLM Virtual Keys, Teams, Budgets & Spend Storage) ────
+  db:
+    image: postgres:16-alpine
+    container_name: gateway-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: litellm
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: litellmpassword
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
   # ── LiteLLM Proxy Gateway ───────────────────────────────────────────────
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
@@ -79,6 +99,8 @@ services:
       # Redis connection (used for rate limiting, cooldown, health cache)
       - REDIS_HOST=${REDIS_HOST:-redis}
       - REDIS_PORT=${REDIS_PORT:-6379}
+      # Database connection (required for /team/new, /key/generate, spend tracking)
+      - DATABASE_URL=${DATABASE_URL:-postgresql://litellm:litellmpassword@db:5432/litellm}
       # Dummy OpenAI key — the mock providers don't validate it, but LiteLLM
       # requires the env var to be set since the model is prefixed "openai/"
       - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-fake-not-used}
@@ -90,6 +112,8 @@ services:
       - "--detailed_debug"
     depends_on:
       redis:
+        condition: service_healthy
+      db:
         condition: service_healthy
       mock-api-primary:
         condition: service_healthy
@@ -134,5 +158,6 @@ services:
 
 volumes:
   redis-data:
+  postgres-data:
   prometheus-data:
   grafana-data:
