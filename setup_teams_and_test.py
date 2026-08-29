@@ -153,14 +153,17 @@ async def setup_teams() -> tuple[str, str]:
     """
     print_section("Setting Up Teams & API Keys")
 
+    import uuid
+    run_suffix = uuid.uuid4().hex[:6]
+
     async with httpx.AsyncClient(timeout=30) as client:
         # Teams
-        eng_team = await create_team(client, "engineering", rpm_limit=40)
-        mkt_team = await create_team(client, "marketing",   rpm_limit=10)
+        eng_team = await create_team(client, f"engineering-{run_suffix}", rpm_limit=40)
+        mkt_team = await create_team(client, f"marketing-{run_suffix}",   rpm_limit=10)
 
         # Keys with priorities
-        eng_key = await create_key(client, eng_team, "engineering-key", priority=0.0)
-        mkt_key = await create_key(client, mkt_team, "marketing-key",   priority=10.0)
+        eng_key = await create_key(client, eng_team, f"engineering-key-{run_suffix}", priority=0.0)
+        mkt_key = await create_key(client, mkt_team, f"marketing-key-{run_suffix}",   priority=10.0)
 
     return eng_key, mkt_key
 

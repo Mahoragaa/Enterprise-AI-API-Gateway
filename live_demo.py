@@ -57,6 +57,9 @@ async def main():
 
     async with httpx.AsyncClient(timeout=30) as client:
 
+        # Ensure mock provider is not in poisoned state from previous runs
+        await client.post(f"{PRIMARY_URL}/admin/cure")
+
         # ── SCENE 1: Normal Operations ─────────────────────────────────────────
         console.print("\n[bold yellow]═══ SCENE 1: Normal Operations (Both Providers Healthy) ═══[/bold yellow]")
         console.print("Sending a user request through the Gateway: [dim]http://localhost:4000/v1/chat/completions[/dim]")
@@ -124,11 +127,16 @@ async def main():
         console.print("  • [cyan]Engineering Team[/cyan] (Priority 0 — Critical)")
         console.print("  • [yellow]Marketing Team[/yellow]   (Priority 10 — Low)\n")
 
-        # Create quick demo keys
-        t1 = await client.post(f"{GATEWAY_URL}/team/new", headers=ADMIN_HEADERS, json={"team_alias": "demo-eng", "rpm_limit": 50, "models": ["gpt-4o"]})
-        t2 = await client.post(f"{GATEWAY_URL}/team/new", headers=ADMIN_HEADERS, json={"team_alias": "demo-mkt", "rpm_limit": 10, "models": ["gpt-4o"]})
-        k1 = (await client.post(f"{GATEWAY_URL}/key/generate", headers=ADMIN_HEADERS, json={"team_id": t1.json()["team_id"], "key_alias": "eng-key", "priority": 0, "models": ["gpt-4o"]})).json()["key"]
-        k2 = (await client.post(f"{GATEWAY_URL}/key/generate", headers=ADMIN_HEADERS, json={"team_id": t2.json()["team_id"], "key_alias": "mkt-key", "priority": 10, "models": ["gpt-4o"]})).json()["key"]
+        # Generate unique aliases with timestamp so script is infinitely re-runnable
+        import uuid
+        run_suffix = uuid.uuid4().hex[:6]
+        t1 = await client.post(f"{GATEWAY_URL}/team/new", headers=ADMIN_HEADERS, json={"team_alias": f"demo-eng-{run_suffix}", "rpm_limit": 50, "models": ["gpt-4o"]})
+        t2 = await client.post(f"{GATEWAY_URL}/team/new", headers=ADMIN_HEADERS, json={"team_alias": f"demo-mkt-{run_suffix}", "rpm_limit": 10, "models": ["gpt-4o"]})
+        
+        k1_resp = await client.post(f"{GATEWAY_URL}/key/generate", headers=ADMIN_HEADERS, json={"team_id": t1.json()["team_id"], "key_alias": f"eng-key-{run_suffix}", "priority": 0, "models": ["gpt-4o"]})
+        k2_resp = await client.post(f"{GATEWAY_URL}/key/generate", headers=ADMIN_HEADERS, json={"team_id": t2.json()["team_id"], "key_alias": f"mkt-key-{run_suffix}", "priority": 10, "models": ["gpt-4o"]})
+        k1 = k1_resp.json()["key"]
+        k2 = k2_resp.json()["key"]
 
         async def send_traffic(key, team, priority):
             try:
