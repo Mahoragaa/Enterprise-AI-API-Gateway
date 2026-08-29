@@ -101,6 +101,9 @@ services:
       - REDIS_PORT=${REDIS_PORT:-6379}
       # Database connection (required for /team/new, /key/generate, spend tracking)
       - DATABASE_URL=${DATABASE_URL:-postgresql://litellm:litellmpassword@db:5432/litellm}
+      # Admin UI Login Credentials (renders username & password login screen)
+      - UI_USERNAME=${UI_USERNAME:-admin}
+      - UI_PASSWORD=${UI_PASSWORD:-admin123}
       # Dummy OpenAI key — the mock providers don't validate it, but LiteLLM
       # requires the env var to be set since the model is prefixed "openai/"
       - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-fake-not-used}
