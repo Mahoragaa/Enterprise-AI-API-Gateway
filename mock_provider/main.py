@@ -122,15 +122,23 @@ async def chat_completions(request: Request):
     prefix = f"[{INSTANCE_NAME.upper()} MOCK]"
 
     if any(greet in msg_lower for greet in ["hello", "hi", "hey", "greetings", "hear me"]):
-        answer = f"Hello there! 👋 I can hear you loud and clear. I am the {INSTANCE_NAME} upstream provider behind your LiteLLM Gateway. All systems are operational!"
-    elif any(q in msg_lower for q in ["who are you", "what are you", "what is this"]):
-        answer = f"I am an OpenAI-compatible mock LLM endpoint representing the {INSTANCE_NAME} cluster. Your request passed through LiteLLM Gateway, checked rate limits in Redis, and routed here."
+        answer = f"Hello there! 👋 I can hear you loud and clear. I am the {INSTANCE_NAME} upstream provider behind your RightLLM Gateway. All systems are operational!"
+    elif any(farewell in msg_lower for farewell in ["bye", "goodbye", "see you", "cya", "farewell", "take care", "exit"]):
+        answer = f"Goodbye! 👋 Signing off from the {INSTANCE_NAME} node. Gateway session logged and stored in PostgreSQL. Stay safe in cyberspace!"
+    elif any(thanks in msg_lower for thanks in ["thank", "thanks", "awesome", "great", "cool", "good job"]):
+        answer = f"You're very welcome! Always happy to route and process high-throughput intelligence through the gateway."
+    elif any(q in msg_lower for q in ["who are you", "what are you", "what is this", "what do you do"]):
+        answer = f"I am an OpenAI-compatible simulated LLM endpoint representing the {INSTANCE_NAME} cluster. Your prompts travel through the RightLLM Gateway, authenticate with Redis, and route here with zero downtime."
     elif any(q in msg_lower for q in ["how are you", "status", "health"]):
-        answer = f"All systems nominal! Health probes are passing, Redis cache is active, and I'm ready to handle traffic (served {state.request_count} requests so far)."
+        answer = f"All systems nominal! Health probes are green, Redis rate limiters are active, and I have served {state.request_count} requests on the {INSTANCE_NAME} node."
+    elif any(term in msg_lower for term in ["failover", "outage", "poison"]):
+        answer = f"Our failover mechanism is powered by proactive background health checks every 10 seconds. If the primary node is poisoned, LiteLLM redirects 100% of traffic to fallback within seconds!"
+    elif any(term in msg_lower for term in ["priority", "rate limit", "saturation"]):
+        answer = f"Dynamic priority rate limiting ensures critical teams (Priority 0) never suffer when low-priority teams (Priority 10) flood the gateway. Saturation threshold is set to 50%."
     elif "joke" in msg_lower:
         answer = "Why do LLM gateways never get lost? Because they always know how to route!"
     else:
-        answer = f"Understood: \"{last_user_msg}\". As the {INSTANCE_NAME} provider, I've processed your prompt through the Enterprise Gateway successfully. (Request #{state.request_count})"
+        answer = f"Received: \"{last_user_msg}\". Processing request #{state.request_count} through the {INSTANCE_NAME} cluster. Telemetry dispatched to Prometheus and recorded in PostgreSQL."
 
     reply_content = f"{prefix} {answer}"
 
