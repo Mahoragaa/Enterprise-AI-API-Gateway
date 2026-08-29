@@ -1,0 +1,93 @@
+###############################################################################
+# Enterprise AI API Gateway — Docker Compose
+#
+# Services:
+#   1. mock-api-primary   – FastAPI fake LLM (port 9000)
+#   2. mock-api-fallback  – FastAPI fake LLM (port 9001, independent state)
+#   3. redis              – Shared state for rate limiting & health caching
+#   4. litellm            – LiteLLM proxy gateway (port 4000)
+#
+# Usage:
+#   docker compose up --build
+###############################################################################
+
+services:
+  # ── Mock LLM Provider (primary) ──────────────────────────────────────────
+  mock-api-primary:
+    build:
+      context: ./mock_provider
+      dockerfile: Dockerfile
+    container_name: mock-api-primary
+    ports:
+      - "9000:8000"
+    environment:
+      - INSTANCE_NAME=primary
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  # ── Mock LLM Provider (fallback) ─────────────────────────────────────────
+  mock-api-fallback:
+    build:
+      context: ./mock_provider
+      dockerfile: Dockerfile
+    container_name: mock-api-fallback
+    ports:
+      - "9001:8000"
+    environment:
+      - INSTANCE_NAME=fallback
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  # ── Redis (distributed rate limiting & health state cache) ───────────────
+  redis:
+    image: redis:7-alpine
+    container_name: gateway-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redis-data:/data
+
+  # ── LiteLLM Proxy Gateway ───────────────────────────────────────────────
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: litellm-gateway
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./litellm_config.yaml:/app/config.yaml
+    environment:
+      # Master key for admin operations (key/team CRUD)
+      - LITELLM_MASTER_KEY=sk-master-key-1234
+      # Redis connection (used for rate limiting, cooldown, health cache)
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # Dummy OpenAI key — the mock providers don't validate it, but LiteLLM
+      # requires the env var to be set since the model is prefixed "openai/"
+      - OPENAI_API_KEY=sk-fake-not-used
+    command:
+      - "--config"
+      - "/app/config.yaml"
+      - "--port"
+      - "4000"
+      - "--detailed_debug"
+    depends_on:
+      redis:
+        condition: service_healthy
+      mock-api-primary:
+        condition: service_healthy
+      mock-api-fallback:
+        condition: service_healthy
+
+volumes:
+  redis-data:
