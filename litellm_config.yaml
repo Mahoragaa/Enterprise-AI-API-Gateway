@@ -9,23 +9,32 @@
 # ─── Model Deployments ──────────────────────────────────────────────────────
 model_list:
 
-  # Primary mock endpoint
+  # ─── Primary Real AI: 120-Billion Parameter Model via Groq ────────────────
   - model_name: gpt-4o
     litellm_params:
-      model: openai/gpt-4o                        # provider prefix required
-      api_base: http://mock-api-primary:8000/v1    # points to mock container
-      api_key: os.environ/OPENAI_API_KEY           # not validated by mock
+      model: openai/openai/gpt-oss-120b
+      api_base: https://api.groq.com/openai/v1
+      api_key: os.environ/GROQ_API_KEY
     model_info:
-      id: gpt-4o-primary                           # stable ID for health checks
+      id: real-ai-primary
 
-  # Fallback mock endpoint
+  # ─── Secondary Real AI: 27-Billion Parameter Model via Groq ───────────────
   - model_name: gpt-4o
+    litellm_params:
+      model: openai/qwen/qwen3.8-27b
+      api_base: https://api.groq.com/openai/v1
+      api_key: os.environ/GROQ_API_KEY
+    model_info:
+      id: real-ai-secondary
+
+  # ─── Fallback Endpoint: Emergency Local Mock ─────────────────────────────
+  - model_name: emergency-fallback
     litellm_params:
       model: openai/gpt-4o
-      api_base: http://mock-api-fallback:8000/v1   # independent mock instance
+      api_base: http://mock-api-fallback:8000/v1
       api_key: os.environ/OPENAI_API_KEY
     model_info:
-      id: gpt-4o-fallback
+      id: emergency-mock-fallback
 
 # ─── General Settings ───────────────────────────────────────────────────────
 general_settings:
@@ -50,6 +59,10 @@ general_settings:
 
 # ─── Router Settings ────────────────────────────────────────────────────────
 router_settings:
+  # Automatic failover mapping: if real AI has an outage, route to emergency fallback
+  fallbacks:
+    - gpt-4o: ["emergency-fallback"]
+
   # How long a deployment stays in cooldown after exceeding the fail threshold
   cooldown_time: 60                                # 60-second cooldown
 

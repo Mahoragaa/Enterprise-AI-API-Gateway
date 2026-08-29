@@ -107,6 +107,8 @@ services:
       # Dummy OpenAI key — the mock providers don't validate it, but LiteLLM
       # requires the env var to be set since the model is prefixed "openai/"
       - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-fake-not-used}
+      # Real Groq API Key for live AI responses
+      - GROQ_API_KEY=${GROQ_API_KEY}
     command:
       - "--config"
       - "/app/config.yaml"
