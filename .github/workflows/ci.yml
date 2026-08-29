@@ -1,0 +1,130 @@
+name: CI — Enterprise AI API Gateway
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  # ── Job 1: Lint & static checks ──────────────────────────────────────────
+  lint:
+    name: Lint & Style
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install linting tools
+        run: pip install ruff
+
+      - name: Run ruff (linter + formatter check)
+        run: |
+          ruff check mock_provider/main.py setup_teams_and_test.py
+          ruff format --check mock_provider/main.py setup_teams_and_test.py
+
+  # ── Job 2: Integration test (docker compose) ─────────────────────────────
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install test dependencies
+        run: pip install -r requirements.txt
+
+      - name: Copy env file
+        run: cp .env.example .env
+
+      - name: Build and start the full stack
+        run: docker compose up --build -d
+        env:
+          LITELLM_MASTER_KEY: sk-master-key-1234
+          OPENAI_API_KEY: sk-fake-not-used
+
+      - name: Wait for all services to be healthy
+        run: |
+          echo "Waiting for services..."
+          for i in $(seq 1 30); do
+            STATUS=$(docker compose ps --format json | python3 -c "
+          import sys, json
+          services = [json.loads(l) for l in sys.stdin if l.strip()]
+          unhealthy = [s['Service'] for s in services if s.get('Health') not in ('healthy', '')]
+          print('READY' if not unhealthy else 'WAITING: ' + str(unhealthy))
+          " 2>/dev/null || echo "WAITING")
+            echo "Attempt $i: $STATUS"
+            if [[ "$STATUS" == "READY" ]]; then
+              break
+            fi
+            sleep 5
+          done
+
+      - name: Check LiteLLM gateway is alive
+        run: |
+          curl --retry 10 --retry-delay 3 --retry-connrefused \
+            -f http://localhost:4000/health/liveliness
+
+      - name: Check mock primary is healthy
+        run: curl -f http://localhost:9000/health
+
+      - name: Check mock fallback is healthy
+        run: curl -f http://localhost:9001/health
+
+      - name: Verify Prometheus is scraping
+        run: curl -f http://localhost:9090/-/ready
+
+      - name: Run test harness (Team 1 + 2 round-trips only — skip load test)
+        run: |
+          python - <<'EOF'
+          import asyncio, httpx
+
+          GATEWAY = "http://localhost:4000"
+          MASTER  = "sk-master-key-1234"
+          HEADERS = {"Authorization": f"Bearer {MASTER}", "Content-Type": "application/json"}
+
+          async def main():
+              async with httpx.AsyncClient(timeout=30) as c:
+                  # Create engineering team + key
+                  r = await c.post(f"{GATEWAY}/team/new", headers=HEADERS,
+                      json={"team_alias": "ci-engineering", "rpm_limit": 100, "models": ["gpt-4o"]})
+                  assert r.status_code == 200, f"team/new failed: {r.text}"
+                  team_id = r.json()["team_id"]
+
+                  r = await c.post(f"{GATEWAY}/key/generate", headers=HEADERS,
+                      json={"team_id": team_id, "key_alias": "ci-key", "models": ["gpt-4o"]})
+                  assert r.status_code == 200, f"key/generate failed: {r.text}"
+                  key = r.json()["key"]
+
+                  # Send a completion
+                  r = await c.post(f"{GATEWAY}/v1/chat/completions",
+                      headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                      json={"model": "gpt-4o", "messages": [{"role": "user", "content": "CI smoke test"}]})
+                  assert r.status_code == 200, f"completion failed: {r.text}"
+                  content = r.json()["choices"][0]["message"]["content"]
+                  assert "mock" in content.lower() or "ci" in content.lower(), \
+                      f"Unexpected response: {content}"
+                  print(f"✅ Smoke test passed. Response: {content[:80]}")
+
+          asyncio.run(main())
+          EOF
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --tail=100
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
