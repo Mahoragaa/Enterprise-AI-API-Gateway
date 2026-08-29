@@ -1,0 +1,10 @@
+# ── Test harness dependencies ─────────────────────────────────────────────────
+httpx==0.28.1
+rich==13.9.4
+
+# ── Load testing (Tier 5) ─────────────────────────────────────────────────────
+locust==2.32.4
+
+# ── Mock provider (installed inside Docker, listed here for local dev) ────────
+fastapi==0.115.6
+uvicorn[standard]==0.32.1

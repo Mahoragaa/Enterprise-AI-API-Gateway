@@ -78,6 +78,12 @@ litellm_settings:
   # un-tagged requests are deprioritised relative to team-keyed traffic.
   default_priority: 0.1
 
+  # ── Observability callbacks ──────────────────────────────────────────────
+  # "prometheus" exports request rate, latency, error rate, and token usage
+  # metrics to /metrics — scraped by Prometheus every 10s.
+  success_callback: ["prometheus"]
+  failure_callback: ["prometheus"]
+
   # Keep request/response logging lean
   num_retries: 2
   request_timeout: 30

@@ -9,9 +9,10 @@ venv/
 env/
 *.egg
 
-# Environment / secrets
+# Environment / secrets — real .env files are ignored, template is tracked
 .env
 .env.*
+!.env.example
 *.pem
 *.key
 
