@@ -117,11 +117,22 @@ async def chat_completions(request: Request):
     # ── Build an OpenAI-compatible response ─────────────────────────────────
     completion_id = f"chatcmpl-mock-{uuid.uuid4().hex[:12]}"
     now = int(time.time())
-    reply_content = (
-        f"[{INSTANCE_NAME.upper()} MOCK] You said: \"{last_user_msg[:80]}\". "
-        f"This is a simulated response from the {INSTANCE_NAME} provider. "
-        f"Request #{state.request_count}."
-    )
+    # ── Conversational response generator ───────────────────────────────────
+    msg_lower = last_user_msg.lower().strip()
+    prefix = f"[{INSTANCE_NAME.upper()} MOCK]"
+
+    if any(greet in msg_lower for greet in ["hello", "hi", "hey", "greetings", "hear me"]):
+        answer = f"Hello there! 👋 I can hear you loud and clear. I am the {INSTANCE_NAME} upstream provider behind your LiteLLM Gateway. All systems are operational!"
+    elif any(q in msg_lower for q in ["who are you", "what are you", "what is this"]):
+        answer = f"I am an OpenAI-compatible mock LLM endpoint representing the {INSTANCE_NAME} cluster. Your request passed through LiteLLM Gateway, checked rate limits in Redis, and routed here."
+    elif any(q in msg_lower for q in ["how are you", "status", "health"]):
+        answer = f"All systems nominal! Health probes are passing, Redis cache is active, and I'm ready to handle traffic (served {state.request_count} requests so far)."
+    elif "joke" in msg_lower:
+        answer = "Why do LLM gateways never get lost? Because they always know how to route!"
+    else:
+        answer = f"Understood: \"{last_user_msg}\". As the {INSTANCE_NAME} provider, I've processed your prompt through the Enterprise Gateway successfully. (Request #{state.request_count})"
+
+    reply_content = f"{prefix} {answer}"
 
     # ── Handle streaming (used by LiteLLM Web Playground & chat UIs) ─────────
     if is_streaming:
