@@ -18,12 +18,13 @@ seamlessly to the fallback deployment.
 """
 
 import asyncio
+import json
 import os
 import time
 import uuid
 
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 # ─── App Setup ───────────────────────────────────────────────────────────────
 
@@ -111,10 +112,56 @@ async def chat_completions(request: Request):
         (m.get("content", "") for m in reversed(messages) if m.get("role") == "user"),
         "Hello",
     )
+    is_streaming = body.get("stream", False)
 
     # ── Build an OpenAI-compatible response ─────────────────────────────────
     completion_id = f"chatcmpl-mock-{uuid.uuid4().hex[:12]}"
     now = int(time.time())
+    reply_content = (
+        f"[{INSTANCE_NAME.upper()} MOCK] You said: \"{last_user_msg[:80]}\". "
+        f"This is a simulated response from the {INSTANCE_NAME} provider. "
+        f"Request #{state.request_count}."
+    )
+
+    # ── Handle streaming (used by LiteLLM Web Playground & chat UIs) ─────────
+    if is_streaming:
+        async def sse_stream():
+            words = reply_content.split(" ")
+            for i, word in enumerate(words):
+                chunk = {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": now,
+                    "model": body.get("model", "gpt-4o"),
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"content": word + (" " if i < len(words) - 1 else "")},
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+                yield f"data: {json.dumps(chunk)}\n\n"
+                await asyncio.sleep(0.04)
+
+            # Final stop chunk
+            final_chunk = {
+                "id": completion_id,
+                "object": "chat.completion.chunk",
+                "created": now,
+                "model": body.get("model", "gpt-4o"),
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {},
+                        "finish_reason": "stop",
+                    }
+                ],
+            }
+            yield f"data: {json.dumps(final_chunk)}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(sse_stream(), media_type="text/event-stream")
 
     return JSONResponse(
         content={
@@ -127,19 +174,15 @@ async def chat_completions(request: Request):
                     "index": 0,
                     "message": {
                         "role": "assistant",
-                        "content": (
-                            f"[{INSTANCE_NAME.upper()} MOCK] You said: \"{last_user_msg[:80]}\". "
-                            f"This is a simulated response from the {INSTANCE_NAME} provider. "
-                            f"Request #{state.request_count}."
-                        ),
+                        "content": reply_content,
                     },
                     "finish_reason": "stop",
                 }
             ],
             "usage": {
                 "prompt_tokens": len(last_user_msg.split()),
-                "completion_tokens": 30,
-                "total_tokens": len(last_user_msg.split()) + 30,
+                "completion_tokens": len(reply_content.split()),
+                "total_tokens": len(last_user_msg.split()) + len(reply_content.split()),
             },
         }
     )
