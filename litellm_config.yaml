@@ -1,0 +1,83 @@
+###############################################################################
+# LiteLLM Proxy — Enterprise AI API Gateway Configuration
+#
+# Two deployments of "gpt-4o" backed by mock providers.
+# Health-check-driven routing removes dead endpoints proactively.
+# Priority-based rate limiting gives engineering bandwidth over marketing.
+###############################################################################
+
+# ─── Model Deployments ──────────────────────────────────────────────────────
+model_list:
+
+  # Primary mock endpoint
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o                        # provider prefix required
+      api_base: http://mock-api-primary:8000/v1    # points to mock container
+      api_key: os.environ/OPENAI_API_KEY           # not validated by mock
+    model_info:
+      id: gpt-4o-primary                           # stable ID for health checks
+
+  # Fallback mock endpoint
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_base: http://mock-api-fallback:8000/v1   # independent mock instance
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      id: gpt-4o-fallback
+
+# ─── General Settings ───────────────────────────────────────────────────────
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+  # --- Background Health Checks ---
+  # Run proactive health probes every 10 seconds.  Unhealthy deployments are
+  # removed from the routing pool *before* a user request hits them.
+  background_health_checks: true
+  health_check_interval: 10                        # seconds between probe cycles
+
+  # --- Health-Check-Driven Routing ---
+  # When enabled, the router's first filter step removes any deployment whose
+  # last health check failed, rather than waiting for a user request to fail.
+  enable_health_check_routing: true
+
+  # --- Ignore Transient Errors ---
+  # 429 (rate-limit) and 408 (timeout) responses from health probes are noisy.
+  # With this flag, they are silently ignored — only hard failures (401, 5xx)
+  # affect the health state.
+  health_check_ignore_transient_errors: true
+
+# ─── Router Settings ────────────────────────────────────────────────────────
+router_settings:
+  # How long a deployment stays in cooldown after exceeding the fail threshold
+  cooldown_time: 60                                # 60-second cooldown
+
+  # Fine-grained failure policy: a deployment enters cooldown only after the
+  # Nth failure of a given error type.  "AllowedFails: 1" means cooldown
+  # triggers on the *2nd* consecutive failure (first is allowed).
+  allowed_fails_policy:
+    TimeoutErrorAllowedFails: 1                    # cooldown after 2nd timeout
+    AuthenticationErrorAllowedFails: 1             # cooldown after 2nd auth error
+
+  # Redis-backed rate-limiter settings
+  redis_host: os.environ/REDIS_HOST
+  redis_port: os.environ/REDIS_PORT
+
+# ─── LiteLLM Settings (SDK-level) ──────────────────────────────────────────
+litellm_settings:
+  # --- Dynamic Rate Limiting / Request Prioritization ---
+  # When the combined TPM/RPM usage across all deployments of a model group
+  # exceeds this fraction of total capacity, the scheduler starts enforcing
+  # priority ordering.  At 0.50, strict priority kicks in at 50% saturation
+  # so high-priority teams always get bandwidth under load.
+  saturation_threshold: 0.50
+
+  # Requests that arrive without an explicit `priority` field are assigned
+  # this value.  Lower = higher priority.  0.1 is deliberately low so that
+  # un-tagged requests are deprioritised relative to team-keyed traffic.
+  default_priority: 0.1
+
+  # Keep request/response logging lean
+  num_retries: 2
+  request_timeout: 30
