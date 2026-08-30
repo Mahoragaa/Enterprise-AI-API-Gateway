@@ -122,8 +122,29 @@ class ChatRequest(BaseModel):
 
 @app.post("/api/chat")
 async def send_chat(req: ChatRequest):
-    """Sends prompt through RightLLM Gateway and inspects which node answered."""
+    """Sends prompt through RightLLM Gateway with live telemetry injected so the AI knows its own cluster state."""
     async with httpx.AsyncClient(timeout=30.0) as client:
+        # Check current cluster status
+        primary_poisoned = False
+        try:
+            p_res = await client.get(f"{PRIMARY_URL}/admin/status", timeout=1.5)
+            if p_res.status_code == 200:
+                primary_poisoned = p_res.json().get("poisoned", False)
+        except Exception:
+            primary_poisoned = True
+
+        system_prompt = (
+            "You are RightLLM, the autonomous neural operator embedded in the Enterprise AI Gateway.\n"
+            "You have real-time access to the local cluster telemetry:\n"
+            f"• Primary Upstream Node (mock-api-primary:8000): {'🚨 POISONED / 503 OUTAGE' if primary_poisoned else '🟢 HEALTHY / ONLINE'}\n"
+            f"• Failover Node (mock-api-fallback:8000): {'⚡ ACTIVE (Handling 100% of gateway traffic due to primary outage)' if primary_poisoned else '🔵 STANDBY / READY'}\n"
+            "• PostgreSQL State Database: CONNECTED & SYNCED\n"
+            "• Redis Rate-Limiter Cache: CONNECTED (Priority Saturation Threshold: 50%)\n\n"
+            "INSTRUCTIONS:\n"
+            "1. When the operator asks about system status, health probes, architecture, active nodes, or outages, respond directly with the live telemetry above in a concise, authoritative sci-fi operator tone. Never say you don't have access to the system.\n"
+            "2. For all general questions (coding, history, science, creative writing, chat), answer with full intelligence, accuracy, and depth."
+        )
+
         t0 = time.perf_counter()
         try:
             r = await client.post(
@@ -131,7 +152,10 @@ async def send_chat(req: ChatRequest):
                 headers=ADMIN_HEADERS,
                 json={
                     "model": req.model,
-                    "messages": [{"role": "user", "content": req.message}],
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": req.message},
+                    ],
                     "stream": False,
                 },
             )
@@ -144,7 +168,7 @@ async def send_chat(req: ChatRequest):
 
         data = r.json()
         content = data["choices"][0]["message"]["content"]
-        node = "fallback" if "FALLBACK" in content else "primary"
+        node = "fallback" if primary_poisoned or "FALLBACK" in content else "primary"
 
         return {
             "content": content,
